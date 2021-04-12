@@ -3,6 +3,8 @@ import numpy as np
 import json
 from PIL import Image
 
+from util import correlate, get_boxes, load_filters, printProgressBar, gray_dilation, min_box_size
+
 def compute_convolution(I, T, stride=None):
     '''
     This function takes an image <I> and a template <T> (both numpy arrays) 
@@ -15,8 +17,10 @@ def compute_convolution(I, T, stride=None):
     '''
     BEGIN YOUR CODE
     '''
-    heatmap = np.random.random((n_rows, n_cols))
-
+    # heatmap = np.random.random((n_rows, n_cols))
+    if not stride:
+        stride = 1
+    heatmap = correlate(I, T, stride)
     '''
     END YOUR CODE
     '''
@@ -35,28 +39,30 @@ def predict_boxes(heatmap):
     '''
     BEGIN YOUR CODE
     '''
+
+    output = get_boxes((heatmap > 0.655) * heatmap)
     
     '''
     As an example, here's code that generates between 1 and 5 random boxes
     of fixed size and returns the results in the proper format.
     '''
 
-    box_height = 8
-    box_width = 6
+    # box_height = 8
+    # box_width = 6
 
-    num_boxes = np.random.randint(1,5)
+    # num_boxes = np.random.randint(1,5)
 
-    for i in range(num_boxes):
-        (n_rows,n_cols,n_channels) = np.shape(I)
+    # for i in range(num_boxes):
+    #     (n_rows,n_cols,n_channels) = np.shape(I)
 
-        tl_row = np.random.randint(n_rows - box_height)
-        tl_col = np.random.randint(n_cols - box_width)
-        br_row = tl_row + box_height
-        br_col = tl_col + box_width
+    #     tl_row = np.random.randint(n_rows - box_height)
+    #     tl_col = np.random.randint(n_cols - box_width)
+    #     br_row = tl_row + box_height
+    #     br_col = tl_col + box_width
 
-        score = np.random.random()
+    #     score = np.random.random()
 
-        output.append([tl_row,tl_col,br_row,br_col, score])
+    #     output.append([tl_row,tl_col,br_row,br_col, score])
 
     '''
     END YOUR CODE
@@ -84,14 +90,23 @@ def detect_red_light_mf(I):
     '''
     BEGIN YOUR CODE
     '''
-    template_height = 8
-    template_width = 6
+    # template_height = 8
+    # template_width = 6
 
     # You may use multiple stages and combine the results
-    T = np.random.random((template_height, template_width))
-
-    heatmap = compute_convolution(I, T)
+    # T = np.random.random((template_height, template_width))
+    heatmap = None
+    conv = None
+    for T in templates:
+        conv = compute_convolution(I, T, stride=1)
+        if heatmap is None:
+            heatmap = conv
+        else:
+            heatmap = np.maximum(heatmap, conv)
     output = predict_boxes(heatmap)
+    output = min_box_size(output, 
+                          templates[0].shape[0], templates[0].shape[1],
+                          I.shape[0], I.shape[1])
 
     '''
     END YOUR CODE
@@ -103,55 +118,72 @@ def detect_red_light_mf(I):
 
     return output
 
-# Note that you are not allowed to use test data for training.
-# set the path to the downloaded data:
-data_path = '../data/RedLights2011_Medium'
 
-# load splits: 
-split_path = '../data/hw02_splits'
-file_names_train = np.load(os.path.join(split_path,'file_names_train.npy'))
-file_names_test = np.load(os.path.join(split_Path,'file_names_test.npy'))
+if __name__ == '__main__':
+    # Note that you are not allowed to use test data for training.
+    # set the path to the downloaded data:
+    data_path = 'data/RedLights2011_Medium'
 
-# set a path for saving predictions:
-preds_path = '../data/hw02_preds'
-os.makedirs(preds_path, exist_ok=True) # create directory if needed
+    # load splits: 
+    split_path = 'data/hw02_splits'
+    file_names_train = np.load(os.path.join(split_path,'file_names_train.npy'))
+    file_names_test = np.load(os.path.join(split_path,'file_names_test.npy'))
 
-# Set this parameter to True when you're done with algorithm development:
-done_tweaking = False
+    # Red-light template setup
+    templates, compound_template = load_filters('red-lights/balance')
+    templates = [templates[2]]      # Only take 3rd template
 
-'''
-Make predictions on the training set.
-'''
-preds_train = {}
-for i in range(len(file_names_train)):
+    # set a path for saving predictions:
+    preds_path = 'data/hw02_preds'
+    os.makedirs(preds_path, exist_ok=True) # create directory if needed
 
-    # read image using PIL:
-    I = Image.open(os.path.join(data_path,file_names_train[i]))
+    # Set this parameter to True when you're done with algorithm development:
+    done_tweaking = False
 
-    # convert to numpy array:
-    I = np.asarray(I)
-
-    preds_train[file_names_train[i]] = detect_red_light_mf(I)
-
-# save preds (overwrites any previous predictions!)
-with open(os.path.join(preds_path,'preds_train.json'),'w') as f:
-    json.dump(preds_train,f)
-
-if done_tweaking:
     '''
-    Make predictions on the test set. 
+    Make predictions on the training set.
     '''
-    preds_test = {}
-    for i in range(len(file_names_test)):
+    preds_train = {}
+    n = len(file_names_train)
+    printProgressBar(0, n, prefix='Progress:', suffix='Complete', length=50)
+    for i in range(len(file_names_train)):
 
         # read image using PIL:
-        I = Image.open(os.path.join(data_path,file_names_test[i]))
+        I = Image.open(os.path.join(data_path,file_names_train[i]))
 
         # convert to numpy array:
         I = np.asarray(I)
 
-        preds_test[file_names_test[i]] = detect_red_light_mf(I)
+        preds_train[file_names_train[i]] = detect_red_light_mf(I)
+
+        # Intermediate saves just incase
+        if (i+1) % 50 == 0:
+            print("Writing to preds_train_{}.json".format(i+1))
+            with open(os.path.join(preds_path,'preds_train_{}.json'.format(i+1)),'w') as f:
+                json.dump(preds_train,f)
+
+        printProgressBar(i, n, prefix='Progress:', suffix='Complete', length=50)
 
     # save preds (overwrites any previous predictions!)
-    with open(os.path.join(preds_path,'preds_test.json'),'w') as f:
-        json.dump(preds_test,f)
+    with open(os.path.join(preds_path,'preds_train.json'),'w') as f:
+        json.dump(preds_train,f)
+
+    if done_tweaking:
+        '''
+        Make predictions on the test set. 
+        '''
+        preds_test = {}
+        for i in range(len(file_names_test)):
+
+            # read image using PIL:
+            I = Image.open(os.path.join(data_path,file_names_test[i]))
+
+            # convert to numpy array:
+            I = np.asarray(I)
+
+            preds_test[file_names_test[i]] = detect_red_light_mf(I)
+
+        # save preds (overwrites any previous predictions!)
+        print("Writing to preds_train.json")
+        with open(os.path.join(preds_path,'preds_test.json'),'w') as f:
+            json.dump(preds_test,f)
