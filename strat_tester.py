@@ -10,9 +10,10 @@ from util import load_filters, get_boxes, draw_boxes, binary_dilation, gray2rgb,
 
 # Thresholds
 # heat_thresh = 0.695
-heat_thresh = 0.655
+# heat_thresh = 0.655
 # heat_thresh = 0.73
-# heat_thresh = 0.745
+thresh_ind = 0
+heat_thresh = [0.73, 0.765, 0.655]
 
 CMAP = plt.cm.get_cmap('tab20')
 
@@ -24,27 +25,29 @@ def get_image(path, fname):
 
 
 def gen_image(I):
-    global recorrelate, corr
+    global recorrelate, corr, heatmaps, map_out
     if recorrelate:
-        corr = np.zeros(I.shape[:2], dtype=np.float32)
-        for filt in filters:
-            corr = np.maximum(corr, correlate(I, filt, step=1))
-        print(np.max(corr))
+        heatmaps = np.zeros((len(filters_ind), I.shape[0], I.shape[1]), dtype=np.float32)
+        for j, i in enumerate(filters_ind):
+            heatmaps[j] = correlate(I, filters[i], step=2)
         recorrelate = False
+        corr = np.max(heatmaps, axis=0)
+        map_out = CMAP(corr)[:,:,:3] * 255
+        print(np.max(corr))
 
-    # dilate = gray_dilation(corr, iterations=5)[:,:,0]
-    dilate = corr
-    map_out = CMAP(dilate)[:,:,:3] * 255
-    # output = binary_dilation((corr > heat_thresh), iterations=5)
-    output = (dilate > heat_thresh) * corr
-    boxes = get_boxes(output)
-    boxes = min_box_size(boxes, 
-                         filter_all[2].shape[0], filter_all[2].shape[1],
-                         I.shape[0], I.shape[1])
+    boxes = []
+    output = np.zeros(I.shape[:2], dtype=np.float32)
+    for j, i in enumerate(filters_ind):
+        mask = (heatmaps[j] > heat_thresh[i]) * corr
+        output = np.maximum(output, mask)
+        mask_boxes = get_boxes(mask)
+        boxes += min_box_size(mask_boxes,
+                            filters[i].shape[0], filters[i].shape[1],
+                            I.shape[0], I.shape[1])
     I = draw_boxes(I, boxes)
 
     left = np.concatenate((I, gray2rgb(output > 0) * I), 0)
-    right = np.concatenate((gray2rgb(dilate * 255).astype(np.uint8), 
+    right = np.concatenate((gray2rgb(corr * 255).astype(np.uint8), 
                             map_out.astype(np.uint8)), 0)
 
     height_diff = right.shape[0] - compound_filter.shape[0]
@@ -53,7 +56,7 @@ def gen_image(I):
 
 
 def press(event):
-    global heat_thresh, i, I, looping, f_i, filters, recorrelate
+    global heat_thresh, i, I, looping, f_i, filters_ind, recorrelate, thresh_ind
     # Control commands
     if event.key == 'q':        # Stop program completely
         looping = False
@@ -68,34 +71,44 @@ def press(event):
             I = get_image(data_path, file_names[i])
             recorrelate = True
         if event.key == 'x':      # Next filter
-            f_i = min(len(filter_all), f_i+1)
-            filters = filter_sets[f_i]
+            f_i = min(len(filter_sets), f_i+1)
+            filters_ind = filter_sets[f_i]
             recorrelate = True
         if event.key == 'z':      # Previous filter
             f_i = max(0, f_i-1)
-            filters = filter_sets[f_i]
+            filters_ind = filter_sets[f_i]
             recorrelate = True
+
+        # Select which threshold to edit
+        elif event.key == 'u':
+            thresh_ind = 0
+        elif event.key == 'i':
+            thresh_ind = 1
+        elif event.key == 'o':
+            thresh_ind = 2
+
+        # Change threshhold value
         elif event.key == 'w':
-            heat_thresh = min(1, heat_thresh+0.1)
+            heat_thresh[thresh_ind] = min(1, heat_thresh[thresh_ind]+0.1)
         elif event.key == 's':
-            heat_thresh = max(0, heat_thresh-0.1)
+            heat_thresh[thresh_ind] = max(0, heat_thresh[thresh_ind]-0.1)
         elif event.key == 'e':
-            heat_thresh = min(1, heat_thresh+0.05)
+            heat_thresh[thresh_ind] = min(1, heat_thresh[thresh_ind]+0.05)
         elif event.key == 'd':
-            heat_thresh = max(0, heat_thresh-0.05)
+            heat_thresh[thresh_ind] = max(0, heat_thresh[thresh_ind]-0.05)
         elif event.key == 'r':
-            heat_thresh = min(1, heat_thresh+0.01)
+            heat_thresh[thresh_ind] = min(1, heat_thresh[thresh_ind]+0.01)
         elif event.key == 'f':
-            heat_thresh = max(0, heat_thresh-0.01)
+            heat_thresh[thresh_ind] = max(0, heat_thresh[thresh_ind]-0.01)
         elif event.key == 't':
-            heat_thresh = min(1, heat_thresh+0.005)
+            heat_thresh[thresh_ind] = min(1, heat_thresh[thresh_ind]+0.005)
         elif event.key == 'g':
-            heat_thresh = max(0, heat_thresh-0.005)
+            heat_thresh[thresh_ind] = max(0, heat_thresh[thresh_ind]-0.005)
 
         # Update image
         im.set_array(gen_image(I))
-        ax.set_ylabel('Filter Set: {0}'.format(f_i))
-        ax.set_xlabel('Heatmap Threshold: {0}'.format(heat_thresh))
+        ax.set_ylabel('Filter Set: {0}, Thresh Index {1}'.format(f_i, thresh_ind))
+        ax.set_xlabel('Heatmap Thresholds: {0}, {1}, {2}'.format(*heat_thresh))
         fig.canvas.draw()
 
 
@@ -108,16 +121,18 @@ if __name__=="__main__":
     n = len(file_names)
 
     # Red-light image setup
-    f_i = 2
-    filter_all, compound_filter = load_filters('red-lights/balance')
-    filter_sets = [[filter_all[0]], [filter_all[1]], [filter_all[2]], filter_all]
-    filters = filter_sets[f_i]
+    f_i = 3
+    filters, compound_filter = load_filters('red-lights/balance')
+    # filter_sets = [[filter_all[0]], [filter_all[1]], [filter_all[2]], filter_all]
+    filter_sets = [[0], [1], [2], [0, 1, 2]]
+    filters_ind = filter_sets[f_i]
 
     # Loop sentinels
     i = 0
     looping = True
     recorrelate = True
     corr = None
+    heatmaps = []
 
     # Figure management
     fig, ax = plt.subplots()

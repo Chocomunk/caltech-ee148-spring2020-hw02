@@ -286,6 +286,7 @@ def min_box_size(boxes, height, width, n, m):
             padding = (width - r + l) // 2
             r = min(m-1, r + padding)
             l = max(0, l - padding)
+        # if 2 * (r-l) < (b-t):       # Filter out shapes that aren't "tall" enough
         output.append([t, l, b, r, c])
     return output
 

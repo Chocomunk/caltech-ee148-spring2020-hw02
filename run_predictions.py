@@ -40,7 +40,7 @@ def predict_boxes(heatmap):
     BEGIN YOUR CODE
     '''
 
-    output = get_boxes((heatmap > 0.655) * heatmap)
+    output = get_boxes(heatmap)
     
     '''
     As an example, here's code that generates between 1 and 5 random boxes
@@ -95,18 +95,20 @@ def detect_red_light_mf(I):
 
     # You may use multiple stages and combine the results
     # T = np.random.random((template_height, template_width))
-    heatmap = None
-    conv = None
-    for T in templates:
-        conv = compute_convolution(I, T, stride=1)
-        if heatmap is None:
-            heatmap = conv
-        else:
-            heatmap = np.maximum(heatmap, conv)
-    output = predict_boxes(heatmap)
-    output = min_box_size(output, 
-                          templates[0].shape[0], templates[0].shape[1],
-                          I.shape[0], I.shape[1])
+    heatmaps = np.zeros((len(templates), I.shape[0], I.shape[1]))
+    for i in range(len(templates)):
+        ### Weakened Algorithm
+        heatmaps[i] = compute_convolution(I, templates[i], stride=2)
+        ### Best Algorithm
+        # conv = compute_convolution(I, T, stride=1)
+
+    max_map = np.max(heatmaps, axis=0)
+    output = []
+    for i in range(len(templates)):
+        boxes = predict_boxes((heatmaps[i] > thresholds[i]) * max_map)
+        output += min_box_size(boxes, 
+                            templates[i].shape[0], templates[i].shape[1],
+                            I.shape[0], I.shape[1])
 
     '''
     END YOUR CODE
@@ -130,8 +132,17 @@ if __name__ == '__main__':
     file_names_test = np.load(os.path.join(split_path,'file_names_test.npy'))
 
     # Red-light template setup
-    templates, compound_template = load_filters('red-lights/balance')
-    templates = [templates[2]]      # Only take 3rd template
+    filters, compound_template = load_filters('red-lights/balance')
+
+    ### Weakened Algorithm
+    templates = [filters[1]]
+    thresholds = [0.6]
+
+    ### Best Algorithm
+    # templates = filters
+    # thresholds = [0.73, 0.765, 0.655]
+    # templates = [filters[2]]      # Turns out just 3rd picture is best :(
+    # thresholds = [0.655]
 
     # set a path for saving predictions:
     preds_path = 'data/hw02_preds'
@@ -140,39 +151,49 @@ if __name__ == '__main__':
     # Set this parameter to True when you're done with algorithm development:
     done_tweaking = False
 
+    # Since we seed the randomness, we can avoid executing on the training set
+    # again for some extra speed
+    train_model = True
+
     '''
     Make predictions on the training set.
     '''
-    preds_train = {}
-    n = len(file_names_train)
-    printProgressBar(0, n, prefix='Progress:', suffix='Complete', length=50)
-    for i in range(len(file_names_train)):
+    if train_model:
+        print("Running predictions on training set")
+        preds_train = {}
+        n = len(file_names_train)
+        printProgressBar(0, n, prefix='Progress:', suffix='Complete', length=50)
+        for i in range(len(file_names_train)):
 
-        # read image using PIL:
-        I = Image.open(os.path.join(data_path,file_names_train[i]))
+            # read image using PIL:
+            I = Image.open(os.path.join(data_path,file_names_train[i]))
 
-        # convert to numpy array:
-        I = np.asarray(I)
+            # convert to numpy array:
+            I = np.asarray(I)
 
-        preds_train[file_names_train[i]] = detect_red_light_mf(I)
+            preds_train[file_names_train[i]] = detect_red_light_mf(I)
 
-        # Intermediate saves just incase
-        if (i+1) % 50 == 0:
-            print("Writing to preds_train_{}.json".format(i+1))
-            with open(os.path.join(preds_path,'preds_train_{}.json'.format(i+1)),'w') as f:
-                json.dump(preds_train,f)
+            # Intermediate saves just incase
+            if (i+1) % 50 == 0:
+                # print("Writing to preds_train_{}.json".format(i+1))
+                with open(os.path.join(preds_path,'preds_train_{}.json'.format(i+1)),'w') as f:
+                    json.dump(preds_train,f)
 
-        printProgressBar(i, n, prefix='Progress:', suffix='Complete', length=50)
+            printProgressBar(i, n, prefix='Progress:', suffix='Complete', length=50)
 
-    # save preds (overwrites any previous predictions!)
-    with open(os.path.join(preds_path,'preds_train.json'),'w') as f:
-        json.dump(preds_train,f)
+        # save preds (overwrites any previous predictions!)
+        print("Writing to preds_train.json")
+        with open(os.path.join(preds_path,'preds_train.json'),'w') as f:
+            json.dump(preds_train,f)
 
+    '''
+    Make predictions on the test set. 
+    '''
     if done_tweaking:
-        '''
-        Make predictions on the test set. 
-        '''
+        print("Running predictions on test set")
         preds_test = {}
+        n = len(file_names_test)
+        printProgressBar(0, n, prefix='Progress:', suffix='Complete', length=50)
         for i in range(len(file_names_test)):
 
             # read image using PIL:
@@ -183,7 +204,15 @@ if __name__ == '__main__':
 
             preds_test[file_names_test[i]] = detect_red_light_mf(I)
 
+            # Intermediate saves just incase
+            if (i+1) % 50 == 0:
+                # print("Writing to preds_test_{}.json".format(i+1))
+                with open(os.path.join(preds_path,'preds_test_{}.json'.format(i+1)),'w') as f:
+                    json.dump(preds_test,f)
+
+            printProgressBar(i, n, prefix='Progress:', suffix='Complete', length=50)
+
         # save preds (overwrites any previous predictions!)
-        print("Writing to preds_train.json")
+        print("Writing to preds_test.json")
         with open(os.path.join(preds_path,'preds_test.json'),'w') as f:
             json.dump(preds_test,f)

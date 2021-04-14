@@ -73,13 +73,17 @@ def compute_counts(preds, gts, iou_thr=0.5, conf_thr=0.5):
     '''
     BEGIN YOUR CODE
     '''
+    M = 0
+    N = 0
     for pred_file, pred in preds.items():
         gt = gts[pred_file]
-        M = 0
-        n = 0
+        # M = 0
+        # n = 0
 
         # Each prediction only corresponds to 1 ground truth
         filled = [False for _ in range(len(pred))]
+        # M += len(pred)
+        N += len(gt)
         for i in range(len(gt)):
             for j in range(len(pred)):
 
@@ -89,11 +93,14 @@ def compute_counts(preds, gts, iou_thr=0.5, conf_thr=0.5):
                     iou = compute_iou(pred[j][:4], gt[i])
                     if iou >= iou_thr:
                         filled[j] = True
-                        n += 1
+                        # n += 1
+                        TP += 1
                         break
-        FP += M - n
-        FN += len(gt) - n
-        TP += n
+        # FP += M - n
+        # FN += len(gt) - n
+        # TP += n
+    FP = M - TP
+    FN = N - TP
 
     '''
     END YOUR CODE
@@ -110,6 +117,10 @@ def compute_PR(preds, gts, iou_thresholds, conf_thresholds):
         gts             - Ground truth values
         iou_thresholds  - List of IoU thresholds to consider
         conf_thresholds - List of confidence thresholds to consider
+
+    Returns:
+        Precision   Shape: (num_conf_thresholds, num_iou_thresholds)
+        Recall      Shape: (num_conf_thresholds, num_iou_thresholds)
     """
     tp = np.zeros((len(conf_thresholds), len(iou_thresholds)), dtype=np.int32)
     fp = np.zeros((len(conf_thresholds), len(iou_thresholds)), dtype=np.int32)
@@ -120,13 +131,14 @@ def compute_PR(preds, gts, iou_thresholds, conf_thresholds):
     M = tp + fp
     N = tp + fn
 
-    # Precision, Recall
-    return np.divide(tp, M), np.divide(tp, N)
+    # Handle divide by 0
+    return np.divide(tp, M, out=np.ones_like(M, dtype=float), where=M!=0), \
+           np.divide(tp, N, out=np.ones_like(N, dtype=float), where=N!=0)
 
 
 def plot_PR_curve(preds, gts, name):
     # conf_thrs = np.sort(np.array([box[4] for fname in preds for box in preds[fname]],dtype=float))
-    conf_thrs = np.linspace(0.655, 0.99, 50)
+    conf_thrs = np.linspace(0.655, 1, 500)
     iou_thrs = [0.25, 0.5, 0.75]
     P, R = compute_PR(preds, gts, iou_thrs, conf_thrs)
 
@@ -153,6 +165,10 @@ if __name__ == '__main__':
     # Set this parameter to True when you're done with algorithm development:
     done_tweaking = False
 
+    # Since we seed the randomness, we can avoid executing on the training set
+    # again for some extra speed
+    train_model = True
+
     '''
     Load training data. 
     '''
@@ -175,13 +191,13 @@ if __name__ == '__main__':
             gts_test = json.load(f)
 
     # Plot training set PR curves
-    plot_PR_curve(preds_train, gts_train, "Training Set")
-    plt.savefig('data/train_pr_curve')
-    plt.show()
+    if train_model:
+        print('Plotting train set PR curves.')
+        plot_PR_curve(preds_train, gts_train, "Training Set")
+        plt.savefig('data/train_pr_curve')
+        plt.show()
     if done_tweaking:
+        print('Plotting test set PR curves.')
         plot_PR_curve(preds_test, gts_test, "Test Set")
         plt.savefig('data/test_pr_curve')
         plt.show()
-
-    if done_tweaking:
-        print('Code for plotting test set PR curves.')
