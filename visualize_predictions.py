@@ -17,7 +17,7 @@ if __name__=='__main__':
 
     # Load predictions
     preds_path = 'data/hw02_preds'
-    preds_file = 'preds_test_50.json'       # TODO: Change this as needed
+    preds_file = 'preds_test.json'       # TODO: Change this as needed
     data = None
     with open(os.path.join(preds_path,preds_file),'r') as f:
         data = json.load(f)
